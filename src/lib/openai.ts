@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
+    apiKey: process.env.VITE_OPENAI_API_KEY || "",
+    dangerouslyAllowBrowser: true,
 });
 
 export const MASTER_PROMPT = `You are an expert insurance advisor and ROI consultant specializing in helping insurance carriers optimize their operations through data-driven insights and industry expertise.
