@@ -9,6 +9,7 @@ interface Message {
 interface TabState {
   messages: Message[];
   isOpen: boolean;
+  lastMessageContent?: string;
 }
 
 interface ChatState {
@@ -27,6 +28,7 @@ interface ChatState {
 const DEFAULT_TAB_STATE: TabState = {
   messages: [],
   isOpen: true,
+  lastMessageContent: undefined
 };
 
 const generateMessageId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -34,7 +36,7 @@ const generateMessageId = () => Math.random().toString(36).substring(2) + Date.n
 const getTabWelcomeMessage = (tab: string) => {
   switch (tab) {
     case 'calculator':
-      return "Hello! I'm your insurance ROI advisor. Would you like help entering data into the calculator? I can guide you through each field and provide relevant benchmarks. If you'd like to keep General Liability as your Line of Business, just type 'Next' and we'll proceed with entering your data.";
+      return "Hello! I'm your insurance ROI advisor. Please select your Line of Business from the dropdown menu to get started. This selection is required to provide accurate benchmarks and industry-specific guidance.";
     case 'narrative':
       return "Welcome to the Narrative section! I can help you understand your results in detail. Would you like me to explain:\n\n1. Growth Analysis\n2. Process Improvements\n3. Financial Impact\n\nJust let me know which area interests you.";
     case 'context':
@@ -62,6 +64,7 @@ export const useChatStore = create<ChatState>((set) => ({
               content: welcomeMessage,
               id: generateMessageId(),
             }] : [],
+            lastMessageContent: welcomeMessage
           },
         },
       };
@@ -70,19 +73,27 @@ export const useChatStore = create<ChatState>((set) => ({
   }),
 
   addMessage: (tab: string, content: string, role: 'user' | 'assistant') => 
-    set((state) => ({
-      tabStates: {
-        ...state.tabStates,
-        [tab]: {
-          ...state.tabStates[tab] || DEFAULT_TAB_STATE,
-          messages: [
-            ...(state.tabStates[tab]?.messages || []),
-            { role, content, id: generateMessageId() },
-          ],
-          isOpen: true,
+    set((state) => {
+      // Don't add if it's the same as the last message
+      if (state.tabStates[tab]?.lastMessageContent === content) {
+        return state;
+      }
+
+      return {
+        tabStates: {
+          ...state.tabStates,
+          [tab]: {
+            ...state.tabStates[tab] || DEFAULT_TAB_STATE,
+            messages: [
+              ...(state.tabStates[tab]?.messages || []),
+              { role, content, id: generateMessageId() },
+            ],
+            isOpen: true,
+            lastMessageContent: content
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setIsOpen: (tab: string, isOpen: boolean) =>
     set((state) => ({
@@ -96,34 +107,42 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   clearMessages: (tab: string) =>
-    set((state) => ({
-      tabStates: {
-        ...state.tabStates,
-        [tab]: {
-          ...state.tabStates[tab] || DEFAULT_TAB_STATE,
-          messages: [{
-            role: 'assistant',
-            content: getTabWelcomeMessage(tab),
-            id: generateMessageId(),
-          }],
+    set((state) => {
+      const welcomeMessage = getTabWelcomeMessage(tab);
+      return {
+        tabStates: {
+          ...state.tabStates,
+          [tab]: {
+            ...state.tabStates[tab] || DEFAULT_TAB_STATE,
+            messages: [{
+              role: 'assistant',
+              content: welcomeMessage,
+              id: generateMessageId(),
+            }],
+            lastMessageContent: welcomeMessage
+          },
         },
-      },
-    })),
+      };
+    }),
 
   initializeTab: (tab: string, initialMessage?: string) =>
-    set((state) => ({
-      tabStates: {
-        ...state.tabStates,
-        [tab]: {
-          ...DEFAULT_TAB_STATE,
-          messages: [{
-            role: 'assistant',
-            content: initialMessage || getTabWelcomeMessage(tab),
-            id: generateMessageId(),
-          }],
+    set((state) => {
+      const message = initialMessage || getTabWelcomeMessage(tab);
+      return {
+        tabStates: {
+          ...state.tabStates,
+          [tab]: {
+            ...DEFAULT_TAB_STATE,
+            messages: [{
+              role: 'assistant',
+              content: message,
+              id: generateMessageId(),
+            }],
+            lastMessageContent: message
+          },
         },
-      },
-    })),
+      };
+    }),
 
   handleExampleDataLoaded: () =>
     set((state) => ({
@@ -154,7 +173,7 @@ export const useChatStore = create<ChatState>((set) => ({
             ...(state.tabStates.calculator?.messages || []),
             {
               role: 'assistant',
-              content: "I see you've reset the calculator. Would you like help entering your data? I can guide you through each field and provide relevant benchmarks and suggestions. Just say 'yes' to begin!",
+              content: "I see you've reset the calculator. Please select your Line of Business from the dropdown menu to begin. This selection is required to provide accurate benchmarks and industry-specific guidance.",
               id: generateMessageId(),
             },
           ],
@@ -164,21 +183,29 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   handleFieldFocus: (fieldName: string, suggestion: string) =>
-    set((state) => ({
-      tabStates: {
-        ...state.tabStates,
-        calculator: {
-          ...state.tabStates.calculator || DEFAULT_TAB_STATE,
-          messages: [
-            ...(state.tabStates.calculator?.messages || []),
-            {
-              role: 'assistant',
-              content: suggestion,
-              id: generateMessageId(),
-            },
-          ],
-          isOpen: true,
+    set((state) => {
+      // Don't add if it's the same as the last message
+      if (state.tabStates.calculator?.lastMessageContent === suggestion) {
+        return state;
+      }
+
+      return {
+        tabStates: {
+          ...state.tabStates,
+          calculator: {
+            ...state.tabStates.calculator || DEFAULT_TAB_STATE,
+            messages: [
+              ...(state.tabStates.calculator?.messages || []),
+              {
+                role: 'assistant',
+                content: suggestion,
+                id: generateMessageId(),
+              },
+            ],
+            isOpen: true,
+            lastMessageContent: suggestion
+          },
         },
-      },
-    })),
+      };
+    }),
 }));

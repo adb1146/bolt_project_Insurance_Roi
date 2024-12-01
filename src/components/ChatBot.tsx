@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, X } from 'lucide-react';
 import { CalculatorInputs, CalculatorResults } from '../types';
-import { getChatCompletion } from '../lib/openai';
+import { getChatCompletion, getResultsAnalysis } from '../lib/openai';
 import { useChatStore } from '../store/chatStore';
-import { LOBBenchmarks } from '../utils/benchmarks';
+import { useCalculatorStore } from '../store/calculatorStore';
+import { getFieldSuggestion } from '../utils/suggestions';
 
 interface ChatBotProps {
   inputs: CalculatorInputs;
@@ -12,23 +13,6 @@ interface ChatBotProps {
   currentField: string | null;
   setCurrentField: (field: string | null) => void;
 }
-
-const fieldLabels: Record<string, string> = {
-  selectedLOB: "Line of Business",
-  premium2023: "Previous Full Year Premium",
-  growthRate: "Growth Rate Target",
-  retentionRate: "Retention Rate",
-  yearlyRateIncrease: "Rate Increase",
-  avgPremiumPerPolicy: "Average Premium per Policy",
-  submissionQuoted: "Submissions Quoted",
-  quoteToBind: "Quote to Bind Ratio",
-  quoteSubmissionRatio: "New Quote Rate",
-  hitRatio: "New Hit Ratio",
-  expenseRatio: "Current Expense Ratio",
-  lossRatio: "Current Loss Ratio",
-  expenseRatioImprovement: "Expense Ratio Improvement",
-  lossRatioImprovement: "Loss Ratio Improvement"
-};
 
 export default function ChatBot({ 
   inputs, 
@@ -39,8 +23,15 @@ export default function ChatBot({
 }: ChatBotProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageRef = useRef<string | null>(null);
+  const lastFieldRef = useRef<string | null>(null);
+  const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { shouldOfferReview, isExampleData } = useCalculatorStore();
 
   const {
     tabStates,
@@ -73,30 +64,97 @@ export default function ChatBot({
     }
   }, [isLoading]);
 
-  const moveToNextField = (currentFieldName: string) => {
-    if (currentFieldName !== 'selectedLOB') {
-      const fields = [
-        'selectedLOB',
-        'premium2023',
-        'growthRate',
-        'retentionRate',
-        'yearlyRateIncrease',
-        'avgPremiumPerPolicy',
-        'submissionQuoted',
-        'quoteToBind',
-        'quoteSubmissionRatio',
-        'hitRatio',
-        'expenseRatio',
-        'lossRatio',
-        'expenseRatioImprovement',
-        'lossRatioImprovement'
-      ];
-      
-      const currentIndex = fields.indexOf(currentFieldName);
-      if (currentIndex < fields.length - 1) {
-        const nextField = fields[currentIndex + 1];
-        setCurrentField(nextField);
+  const addMessageWithDedup = (content: string, role: 'user' | 'assistant') => {
+    if (lastMessageRef.current !== content) {
+      addMessage(currentTab, content, role);
+      lastMessageRef.current = content;
+    }
+  };
+
+  // Handle field guidance with debounce and lock
+  const handleFieldGuidance = (fieldName: string) => {
+    if (fieldName === lastFieldRef.current || isProcessing) return;
+    
+    setIsProcessing(true);
+    lastFieldRef.current = fieldName;
+
+    if (suggestionTimeoutRef.current) {
+      clearTimeout(suggestionTimeoutRef.current);
+    }
+
+    suggestionTimeoutRef.current = setTimeout(() => {
+      if (fieldName === 'selectedLOB' && !inputs.selectedLOB) {
+        const message = "Please select your Line of Business from the dropdown menu. This selection is required to provide accurate benchmarks and industry-specific guidance.";
+        addMessageWithDedup(message, 'assistant');
+      } else if (inputs.selectedLOB) {
+        const suggestion = getFieldSuggestion(fieldName, inputs.selectedLOB);
+        if (suggestion) {
+          addMessageWithDedup(suggestion, 'assistant');
+        }
       }
+      setIsProcessing(false);
+    }, 500); // Increased debounce time
+  };
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (suggestionTimeoutRef.current) {
+        clearTimeout(suggestionTimeoutRef.current);
+      }
+      if (analysisTimeoutRef.current) {
+        clearTimeout(analysisTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Effect to handle field changes with debounce
+  useEffect(() => {
+    if (currentField) {
+      handleFieldGuidance(currentField);
+    }
+  }, [currentField, inputs.selectedLOB]);
+
+  // Effect to handle results analysis with debounce
+  useEffect(() => {
+    if (!shouldOfferReview || isExampleData || isProcessing) return;
+
+    if (analysisTimeoutRef.current) {
+      clearTimeout(analysisTimeoutRef.current);
+    }
+
+    analysisTimeoutRef.current = setTimeout(async () => {
+      setIsProcessing(true);
+      const analysis = await getResultsAnalysis(inputs.selectedLOB, results);
+      if (analysis) {
+        addMessageWithDedup(analysis, 'assistant');
+      }
+      setIsProcessing(false);
+    }, 1000);
+  }, [shouldOfferReview, isExampleData, inputs.selectedLOB, results]);
+
+  const moveToNextField = (currentFieldName: string) => {
+    const fields = [
+      'selectedLOB',
+      'premium2023',
+      'growthRate',
+      'retentionRate',
+      'yearlyRateIncrease',
+      'avgPremiumPerPolicy',
+      'submissionQuoted',
+      'quoteToBind',
+      'quoteSubmissionRatio',
+      'hitRatio',
+      'expenseRatio',
+      'lossRatio',
+      'expenseRatioImprovement',
+      'lossRatioImprovement'
+    ];
+    
+    const currentIndex = fields.indexOf(currentFieldName);
+    if (currentIndex < fields.length - 1) {
+      const nextField = fields[currentIndex + 1];
+      setCurrentField(nextField);
     }
   };
 
@@ -128,25 +186,13 @@ export default function ChatBot({
   const handleUserInput = (userInput: string) => {
     if (!currentField) return;
 
-    const fieldLabel = fieldLabels[currentField];
-
-    // Special handling for Line of Business field
     if (currentField === 'selectedLOB') {
-      if (userInput.toLowerCase() === 'next') {
-        onUpdateInputs('selectedLOB', 'General Liability');
+      if (userInput.toLowerCase() === 'next' && inputs.selectedLOB) {
         moveToNextField('selectedLOB');
-        
-        // Provide guidance for the next field
-        const nextFieldLabel = fieldLabels['premium2023'];
-        addMessage(currentTab, 
-          `Great! I've set your Line of Business to General Liability. Now, let's enter your ${nextFieldLabel}. You can enter it as a number, with dollar signs, or use 'm' for millions (e.g., '10m' or '$10 million').`, 
-          'assistant'
-        );
       }
       return;
     }
 
-    // Handle numerical inputs for other fields
     const number = extractNumber(userInput);
     if (number) {
       const numValue = parseFloat(number);
@@ -186,20 +232,13 @@ export default function ChatBot({
     if (!input.trim() || isLoading) return;
 
     const userInput = input.trim();
-    addMessage(currentTab, userInput, 'user');
+    addMessageWithDedup(userInput, 'user');
     setInput('');
     setIsLoading(true);
 
     try {
       const context = `Current field: ${currentField ? fieldLabels[currentField] : 'None'}
-        Line of Business: ${inputs.selectedLOB || 'Not selected'}
-        
-        IMPORTANT:
-        - If on Line of Business field, only proceed on "Next" command
-        - Keep focus on Line of Business until user types "Next" or selects from dropdown
-        - For other fields, validate numerical inputs before moving on
-        - Always refer to fields by their display labels
-        - Maintain field context throughout the conversation`;
+        Line of Business: ${inputs.selectedLOB || 'Not selected'}`;
 
       const chatMessages = [
         ...messages,
@@ -215,14 +254,15 @@ export default function ChatBot({
       });
 
       const response = await getChatCompletion(chatMessages);
-
+      
       if (response) {
-        addMessage(currentTab, response, 'assistant');
+        addMessageWithDedup(response, 'assistant');
         handleUserInput(userInput);
       }
     } catch (error) {
-      console.error('Error in chat:', error);
-      addMessage(currentTab, 'I apologize, but I encountered an error. Please try again or contact support if the issue persists.', 'assistant');
+      console.error('Chat error:', error);
+      const errorMessage = "I'm here to help! Please select your Line of Business from the dropdown menu to get started.";
+      addMessageWithDedup(errorMessage, 'assistant');
     } finally {
       setIsLoading(false);
     }
@@ -306,3 +346,20 @@ export default function ChatBot({
     </div>
   );
 }
+
+const fieldLabels: Record<string, string> = {
+  selectedLOB: "Line of Business",
+  premium2023: "Previous Full Year Premium",
+  growthRate: "Growth Rate Target",
+  retentionRate: "Retention Rate",
+  yearlyRateIncrease: "Rate Increase",
+  avgPremiumPerPolicy: "Average Premium per Policy",
+  submissionQuoted: "Submissions Quoted",
+  quoteToBind: "Quote to Bind Ratio",
+  quoteSubmissionRatio: "New Quote Rate",
+  hitRatio: "New Hit Ratio",
+  expenseRatio: "Current Expense Ratio",
+  lossRatio: "Current Loss Ratio",
+  expenseRatioImprovement: "Expense Ratio Improvement",
+  lossRatioImprovement: "Loss Ratio Improvement"
+};

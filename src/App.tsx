@@ -60,14 +60,8 @@ function App() {
   };
 
   const handleFieldFocus = (fieldName: string) => {
-    // If no LOB is selected and user clicks a field, set General Liability as default
-    if (!inputs.selectedLOB && fieldName !== 'selectedLOB') {
-      setField('selectedLOB', 'General Liability');
-      addMessage('calculator', "I've set General Liability as your default Line of Business. You can change this anytime from the dropdown.", 'assistant');
-    }
-    
     setCurrentField(fieldName);
-    const suggestion = getFieldSuggestion(fieldName, inputs.selectedLOB || 'General Liability');
+    const suggestion = getFieldSuggestion(fieldName, inputs.selectedLOB);
     if (suggestion) {
       addMessage('calculator', suggestion, 'assistant');
     }

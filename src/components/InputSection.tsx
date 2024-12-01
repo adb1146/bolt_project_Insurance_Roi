@@ -1,7 +1,8 @@
 import React from 'react';
-import { Info } from 'lucide-react';
+import { Info, AlertCircle } from 'lucide-react';
 import { CalculatorInputs } from '../types';
 import { LOBBenchmarks } from '../utils/benchmarks';
+import { useCalculatorStore } from '../store/calculatorStore';
 
 interface InputSectionProps {
   inputs: CalculatorInputs;
@@ -24,6 +25,7 @@ interface InputFieldProps {
   isExampleData?: boolean;
   isPercentage?: boolean;
   onFieldFocus: (fieldName: string) => void;
+  disabled?: boolean;
 }
 
 function InputField({ 
@@ -37,13 +39,15 @@ function InputField({
   isHighlighted = false,
   isExampleData = false,
   isPercentage = false,
-  onFieldFocus
+  onFieldFocus,
+  disabled = false
 }: InputFieldProps) {
   const formattedValue = typeof value === 'number' && isCurrency 
     ? value.toLocaleString('en-US', { maximumFractionDigits: 0 })
     : value.toString();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const rawValue = e.target.value.replace(/[^0-9.-]+/g, '');
     onChange(name, rawValue);
   };
@@ -51,6 +55,7 @@ function InputField({
   return (
     <div 
       className={`p-3 sm:p-4 rounded-lg transition-colors duration-300 ${
+        disabled ? 'opacity-50 cursor-not-allowed' :
         isHighlighted 
           ? 'bg-indigo-100 ring-2 ring-indigo-500 shadow-lg' 
           : isGreen 
@@ -87,15 +92,16 @@ function InputField({
           id={name}
           value={formattedValue}
           onChange={handleChange}
-          onFocus={() => onFieldFocus(name)}
-          className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-            isCurrency ? 'pl-7' : ''
-          } ${
-            isPercentage ? 'pr-7' : ''
-          } ${
-            isHighlighted ? 'border-indigo-300' : ''
+          onFocus={() => !disabled && onFieldFocus(name)}
+          className={`block w-full rounded-md shadow-sm sm:text-sm ${
+            disabled ? 'bg-gray-100 cursor-not-allowed' :
+            `${isCurrency ? 'pl-7' : ''} 
+            ${isPercentage ? 'pr-7' : ''} 
+            ${isHighlighted ? 'border-indigo-300' : 'border-gray-300'} 
+            focus:border-indigo-500 focus:ring-indigo-500`
           }`}
           placeholder={isExampleData ? "Enter your value" : ""}
+          disabled={disabled}
         />
       </div>
     </div>
@@ -110,6 +116,20 @@ export default function InputSection({
   onLOBChange,
   onFieldFocus 
 }: InputSectionProps) {
+  const canProceed = useCalculatorStore((state) => state.canProceed);
+  const setCurrentField = useCalculatorStore((state) => state.setCurrentField);
+
+  const handleLOBChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onLOBChange(e);
+    // Automatically move to the next field when a valid LOB is selected
+    if (e.target.value) {
+      setTimeout(() => {
+        setCurrentField('premium2023');
+        onFieldFocus('premium2023');
+      }, 100);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
       <div className="space-y-6 sm:space-y-8">
@@ -124,9 +144,11 @@ export default function InputSection({
               id="selectedLOB"
               name="selectedLOB"
               value={inputs.selectedLOB}
-              onChange={onLOBChange}
+              onChange={handleLOBChange}
               onFocus={() => onFieldFocus('selectedLOB')}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className={`block w-full rounded-md shadow-sm sm:text-sm
+                ${!inputs.selectedLOB ? 'border-red-300 text-red-900 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500'}
+              `}
               required
             >
               <option value="">Select a Line of Business</option>
@@ -136,6 +158,14 @@ export default function InputSection({
                 </option>
               ))}
             </select>
+            {!inputs.selectedLOB && (
+              <div className="mt-2 flex items-start gap-2 text-red-600">
+                <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                <p className="text-sm">
+                  Please select a Line of Business to continue. This selection is required for accurate benchmarking and analysis.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -153,6 +183,7 @@ export default function InputSection({
               isCurrency={true}
               isHighlighted={highlightedField === 'premium2023'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Growth Rate Target"
@@ -164,6 +195,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'growthRate'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Retention Rate"
@@ -175,6 +207,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'retentionRate'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Rate Increase"
@@ -186,6 +219,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'yearlyRateIncrease'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Average Premium per Policy"
@@ -197,6 +231,7 @@ export default function InputSection({
               isCurrency={true}
               isHighlighted={highlightedField === 'avgPremiumPerPolicy'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
           </div>
         </div>
@@ -215,6 +250,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'submissionQuoted'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Quote to Bind Ratio"
@@ -226,6 +262,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'quoteToBind'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
           </div>
         </div>
@@ -245,6 +282,7 @@ export default function InputSection({
               isGreen={true}
               isHighlighted={highlightedField === 'quoteSubmissionRatio'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="New Hit Ratio"
@@ -257,6 +295,7 @@ export default function InputSection({
               isGreen={true}
               isHighlighted={highlightedField === 'hitRatio'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
           </div>
         </div>
@@ -275,6 +314,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'expenseRatio'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Current Loss Ratio"
@@ -286,6 +326,7 @@ export default function InputSection({
               isPercentage={true}
               isHighlighted={highlightedField === 'lossRatio'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Expense Ratio Improvement"
@@ -298,6 +339,7 @@ export default function InputSection({
               isGreen={true}
               isHighlighted={highlightedField === 'expenseRatioImprovement'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
             <InputField
               label="Loss Ratio Improvement"
@@ -310,6 +352,7 @@ export default function InputSection({
               isGreen={true}
               isHighlighted={highlightedField === 'lossRatioImprovement'}
               isExampleData={isExampleData}
+              disabled={!canProceed}
             />
           </div>
         </div>

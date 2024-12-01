@@ -35,29 +35,30 @@ const exampleInputs: CalculatorInputs = {
   selectedLOB: 'General Liability'
 };
 
-const fields = [
-  'selectedLOB',
-  'premium2023',
-  'growthRate',
-  'retentionRate',
-  'yearlyRateIncrease',
-  'avgPremiumPerPolicy',
-  'submissionQuoted',
-  'quoteToBind',
-  'quoteSubmissionRatio',
-  'hitRatio',
-  'expenseRatio',
-  'lossRatio',
-  'expenseRatioImprovement',
-  'lossRatioImprovement'
-];
+interface CalculatorState {
+  inputs: CalculatorInputs;
+  currentField: string | null;
+  completedSteps: number;
+  hasUserInput: boolean;
+  isExampleData: boolean;
+  shouldOfferReview: boolean;
+  setField: (field: string, value: string | number) => void;
+  setCurrentField: (field: string | null) => void;
+  resetToExample: () => void;
+  resetToEmpty: () => void;
+  markAsExample: () => void;
+  markAsUserInput: () => void;
+  canProceed: boolean;
+}
 
 export const useCalculatorStore = create<CalculatorState>((set) => ({
   inputs: initialInputs,
-  isExampleData: false,
   currentField: 'selectedLOB',
   completedSteps: 0,
   hasUserInput: false,
+  isExampleData: false,
+  shouldOfferReview: false,
+  canProceed: false,
 
   setField: (field: string, value: string | number) => 
     set((state) => {
@@ -67,40 +68,48 @@ export const useCalculatorStore = create<CalculatorState>((set) => ({
         newInputs[field] = value as string;
         return {
           inputs: newInputs,
-          currentField: 'premium2023',
           hasUserInput: true,
           isExampleData: false,
-          completedSteps: state.completedSteps + 1
+          completedSteps: value ? Math.max(state.completedSteps, 1) : 0,
+          canProceed: Boolean(value),
+          shouldOfferReview: false
         };
+      }
+
+      // Block setting other fields if LOB is not selected
+      if (!state.inputs.selectedLOB) {
+        return state;
       }
 
       const numValue = typeof value === 'string' ? parseFloat(value) : value;
       newInputs[field as keyof CalculatorInputs] = numValue || 0;
 
-      const currentIndex = fields.indexOf(field);
-      const nextField = currentIndex < fields.length - 1 ? fields[currentIndex + 1] : null;
-
-      const newCompletedSteps = numValue > 0 && !state.isExampleData
-        ? Math.min(state.completedSteps + 1, fields.length)
-        : state.completedSteps;
+      const newCompletedSteps = numValue > 0 ? Math.min(state.completedSteps + 1, 13) : state.completedSteps;
+      const shouldOfferReview = newCompletedSteps === 13 && !state.isExampleData;
 
       return {
         inputs: newInputs,
-        currentField: nextField,
-        completedSteps: newCompletedSteps,
         hasUserInput: true,
-        isExampleData: false
+        isExampleData: false,
+        completedSteps: newCompletedSteps,
+        canProceed: Boolean(state.inputs.selectedLOB),
+        shouldOfferReview
       };
     }),
 
-  setCurrentField: (field: string | null) => set({ currentField: field }),
+  setCurrentField: (field: string | null) => set((state) => ({
+    ...state,
+    currentField: !state.inputs.selectedLOB ? 'selectedLOB' : field
+  })),
 
   resetToExample: () => set({
     inputs: exampleInputs,
     isExampleData: true,
     currentField: 'selectedLOB',
-    completedSteps: fields.length,
-    hasUserInput: false
+    completedSteps: 13,
+    hasUserInput: false,
+    canProceed: true,
+    shouldOfferReview: false
   }),
 
   resetToEmpty: () => set({
@@ -108,9 +117,11 @@ export const useCalculatorStore = create<CalculatorState>((set) => ({
     isExampleData: false,
     currentField: 'selectedLOB',
     completedSteps: 0,
-    hasUserInput: false
+    hasUserInput: false,
+    canProceed: false,
+    shouldOfferReview: false
   }),
 
-  markAsExample: () => set({ isExampleData: true, hasUserInput: false }),
+  markAsExample: () => set({ isExampleData: true, hasUserInput: false, shouldOfferReview: false }),
   markAsUserInput: () => set({ isExampleData: false, hasUserInput: true })
 }));
